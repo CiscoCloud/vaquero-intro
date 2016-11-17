@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Vaquero -- What is it?</title>
+    <meta name="description" content="An introduction to Vaquero for the uninitiated.">
+    <meta name="author" content="Ben Schumacher">
+    <link rel="stylesheet" href="css/main.css">
+  </head>
+  <body>
+    <textarea id="source">class: center, middle, inverse
+
+# Vaquero
+
+What is it?
+
+.footnote[
+Ben Schumacher - Cisco]
+---
+layout: false
+
+.left-column[
+  ## Where did it start?
+]
+.right-column[
+
+- Initial discussions between Cisco Cloud team and Comcast in December 2015.
+
+- Scope included container orchestration, OpenStack-based virtualization, system provisioning.
+
+- POC project kicked off in early 2016 under moniker _Gemini_.
+
+  - _Nascent effort started by handful of Cisco engineers._
+
+  - _Intended as unified deployment system for clustered software._
+
+  - _Primary use case: Ansible as CM tool to install clustered software (Kubernetes) on prepared O/S._
+
+.center[
+![:scale 30%](https://www.ansible.com/hubfs/2016_Images/Assets/SVG/Ansible-Mark-RGB_Outline-Black.svg?t=1479260166498) ![:scale 30%](https://cdn.rawgit.com/kubernetes/kubernetes/master/logo/logo.svg)]
+
+]
+
+???
+
+Gemini project focused on enhancements to Ansible playbooks used to deploy
+Kubernetes on a variety of platforms. Work in [kubernetes/contrib](https://github.com/kubernetes/contrib)
+
+Artifacts: https://github.com/gemini-project/
+
+Required: Prepared O/S = installed, networked, user accounts provisioned, etc.
+
+---
+
+.left-column[
+  ## Where did it start?
+  ## Where did it go?
+]
+.right-column[
+- Follow-up meetings with Comcast **V.blue[IP]ER** team in early 2016.
+
+- Discussed perceived weaknesses in current workflow with existing tools.
+
+- Effort refocused around provisioning of bare metal and immutable BM infrastructure in May 2016.
+]
+
+---
+
+.left-column[
+  ## Where did it start?
+  ## Where did it go?
+]
+.right-column[
+- Follow-up meetings with Comcast **V.blue[IP]ER** team in early 2016.
+
+- Discussed perceived weaknesses in current workflow with existing tools.
+
+- Effort refocused around provisioning of bare metal and immutable BM infrastructure in May 2016.
+
+Projected adopted name **Vaquero**.red[\*] to reflect new focus.
+
+.center[![:scale 100%](img/github.png)]
+
+.footnote[.red[\*] vaquero /väˈkerō/ - a cowboy _(Southwestern US Spanish dialect)_]
+]
+---
+
+class: center, middle, inverse
+
+# Requirements
+
+---
+
+## High-level Requirements
+
+1. Declarative textual representation of bare metal compute.
+
+2. Lowest level of software layer (O/S, Kubernetes, etc.) should be immutable.
+
+3. Prefer Git as repository for description of cluster.
+
+4. System maintenance (upgrades, fault recovery, etc.) will be performed by node reboot.
+  - Workflow derived from high-level policies.
+
+## Non-requirements
+
+- Semantic understanding of software layer.
+- Dynamic system inventory.
+
+.footnote[More detailed documentation [available](https://ciscocloud.github.io/vaquero-docs/docs/current/requirements.html).]
+
+???
+
+This approach allows the system to determine best steps for rendering
+configuration onto compute.
+
+Reboot policies encompass several concepts:
+
+  1. reboot one node of this type at a time in a cluster
+  2. this node type A depends on node type B completed
+  3. allows injection of customized logic via containers
+
+---
+
+## Development and Operational Goals
+
+Vaquero tooling should be easy to use.
+
+  - Functionally complete in single binary, and packaged in a Docker container
+
+  - Narrow set of external dependencies -- etcd, GitHub
+
+  - Familiar command-line interface, taking cues from CLIs such as Git, kubectl, docker, etc.
+
+  - Built on powerful foundation of open source tools -- Go, Google's [netboot](https://github.com/google/netboot) package, Docker, etcd, etc.
+
+  .pull-right[
+  ![:scale 100%](https://cdn.rawgit.com/coreos/etcd/master/logos/etcd-horizontal-color.svg)] .pull-left[
+  ![:scale 100%](img/GitHub_logo.svg)]
+---
+
+class: center, middle, inverse
+
+# Data Model
+
+---
+
+layout: true
+### Data Model Primitives
+
+---
+
+.left-column[
+## Operating system
+]
+.right-column[
+
+**`coreos-pxe.yml`**
+```yaml
+id: coreos-1053.2.0-stable
+name: CoreOS Stable 1053.2.0
+major_version: '1053'
+minor_version: '2.0'
+os_family: CoreOS
+release_name: stable
+boot:
+  kernel: "{{.env.agentURL}}/files/{{.boot.os.release_name}}/{{.boot.os.major_version}}/{{.boot.os.minor_version}}/coreos_production_pxe.vmlinuz"
+  initrd:
+  - "{{.env.agentURL}}/files/coreos_production_pxe_image.cpio.gz"
+cmdline:
+  coreos.autologin: ''
+```
+]
+
+---
+
+.left-column[
+## Operating system
+## Netboot
+]
+.right-column[
+
+**`boot/etcd-master.yml`**
+```yaml
+id: etcd-master
+name: Etcd Master
+
+operating_system: coreos-1053.2.0-stable
+
+unattended:
+  type: ignition
+  use: etcd.yml
+
+metadata:
+  fleet_role: etcd
+```
+
+**`boot/clevos.yml`**
+```yaml
+id: clevos
+name: ClevOS 3.7
+
+operating_system: clevos-basic
+
+unattended:
+  type: untyped
+  use: clevos-answers.provision
+
+metadata:
+  root_pass: ********
+```
+]
+
+---
+
+.left-column[
+## Operating system
+## Netboot
+## Environment
+]
+.right-column[
+**`site/detriot/env.yml`**
+```yaml
+name: Virtualenv Dev
+id: test-site
+subnets:
+  - id: default
+    cidr: 10.10.10.0/24
+    domain: foo.bar.com
+    gateway: 10.10.10.1
+    dns:
+    - 8.8.8.8
+    ntp:
+    - 10.10.10.1
+  - id: mgmt-subnet
+    cidr: 10.9.9.0/24
+    dns:
+    - 8.8.8.8
+    ntp:
+    - 10.10.10.1
+metadata:
+  name: detroit-preprod
+  kind: pre-prod  
+  etcd_initial_cluster: node1=http://10.10.10.10:2380,node2=http://10.10.10.11:2380,node3=http://10.10.10.12:2380
+  ssh_authorized_keys: []
+```
+]
+
+---
+
+.left-column[
+## Operating system
+## Netboot
+## Environment
+## Inventory
+]
+.right-column[
+**`site/detriot/inventory.yml`**
+```yaml
+name: host1
+*interfaces:
+  - type: physical
+    subnet: default
+    mac: 00:00:00:00:00:01
+    bmc:
+        type: ipmi
+        username: adam
+        password: ********
+    identifier: eth0
+    ipv4: 10.10.10.10
+metadata:
+    etcd_name: node1
+workflow: etcd-master
+---
+name: host2
+interfaces:
+  - type: physical
+    subnet: default
+    mac: 00:00:00:00:00:02
+    identifier: eth0
+    ipv4: 10.10.10.11
+metadata:
+    etcd_name: node2
+workflow: etcd-master
+```
+]
+---
+layout: false
+class: center, middle, inverse
+
+# Architecture & Design
+
+---
+
+## Software Subsystems
+
+.center[![:scale 90%](https://cdn.rawgit.com/CiscoCloud/vaquero-docs/master/docs/current/nov16Arch.png)]
+
+???
+
+---
+
+## High-Availability
+
+.center[![:scale 90%](https://cdn.rawgit.com/CiscoCloud/vaquero-docs/master/docs/current/nov16HA.png)]
+
+???
+
+    </textarea>
+    <script src="https://gnab.github.io/remark/downloads/remark-latest.min.js"></script>
+    <script>window.remark || document.write(
+  '<script src="js/vendor/remark.min.js"><\/script>'
+)
+
+    </script>
+    <script src="js/vendor/remark-language.js"></script>
+    <script src="js/main.js"></script>
+  </body>
+</html>
